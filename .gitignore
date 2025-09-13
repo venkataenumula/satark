@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pytest_cache/
+.venv/
+venv/
+.env
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Generated runtime data
+satark/agent_server/data/
+satark/agent_server/encrypted_data/
+satark/agent_server/archives/
+satark/offline_server/data/
+satark/offline_server/reports/
+satark/offline_server/vulnerability_db/*.gz
+satark/agent_server/scripts/uploaded_files.json
+
+# Logs
+*.log
+/var/log/satark.log
+
+# OS
+.DS_Store
+Thumbs.db

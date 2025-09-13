@@ -1,0 +1,83 @@
+# syntax=docker/dockerfile:1
+
+# ---- Base (RHEL UBI9 minimal) ----
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+
+# Set noninteractive and upgrade base
+ENV LANG=en_US.UTF-8 \
+    LC_ALL=en_US.UTF-8 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Install system deps:
+# - python3 + pip
+# - openssl (decrypt/verify)
+# - openscap-scanner (for optional oscap export on offline server)
+# - pam, pam-libs (for PAM login), shadow-utils (user mgmt)
+# - tar/gzip/xz (archives), curl (health/debug), which
+# - timezone data
+RUN microdnf -y update && \
+    microdnf -y install \
+        python3.11 python3.11-pip \
+        openssl \
+        openscap-scanner \
+        pam pam-libs shadow-utils \
+        tar gzip xz \
+        curl which tzdata \
+    && microdnf clean all
+
+# Create runtime user
+RUN useradd -m -U -r -d /home/satark -s /sbin/nologin satark
+
+# Workdir
+WORKDIR /app
+
+# Copy only requirements first (better layer cache)
+COPY requirements.txt /app/requirements.txt
+
+# Install Python deps
+RUN python3.11 -m pip install --no-cache-dir --upgrade pip && \
+    python3.11 -m pip install --no-cache-dir -r /app/requirements.txt && \
+    # gunicorn recommended for production WSGI
+    python3.11 -m pip install --no-cache-dir gunicorn
+
+# App code (copy only what we need for offline server)
+# If your repo layout is exactly as earlier: satark/...
+COPY satark/common /app/satark/common
+COPY satark/resources /app/satark/resources
+COPY satark/offline_server /app/satark/offline_server
+
+# Default locations (bind as volumes at runtime)
+# - uploads, decrypted, reports, vuln_db per-user or shared
+ENV OFFLINE_UPLOAD_ROOT=/data/uploads \
+    OFFLINE_DECRYPTED=/data/decrypted \
+    OFFLINE_REPORTS=/data/reports \
+    OFFLINE_VULNDB=/data/vulnerability_db \
+    # Configurable auth mode: pam | token
+    AUTH_MODE=pam \
+    # Flask/Gunicorn bind host/port
+    BIND_HOST=0.0.0.0 \
+    BIND_PORT=5000 \
+    # Flask app module
+    FLASK_APP=satark/offline_server/app/app.py
+
+# Make runtime dirs and set perms
+RUN mkdir -p ${OFFLINE_UPLOAD_ROOT} ${OFFLINE_DECRYPTED} ${OFFLINE_REPORTS} ${OFFLINE_VULNDB} && \
+    chown -R satark:satark /app ${OFFLINE_UPLOAD_ROOT} ${OFFLINE_DECRYPTED} ${OFFLINE_REPORTS} ${OFFLINE_VULNDB}
+
+# Copy entrypoint
+COPY docker/run_offline_server.sh /usr/local/bin/run_offline_server.sh
+RUN chmod +x /usr/local/bin/run_offline_server.sh
+
+# Expose the web port
+EXPOSE 5000
+
+# Drop privileges
+USER satark
+
+# Healthcheck (optional): simple TCP check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
+  CMD /usr/bin/curl -fsS http://127.0.0.1:${BIND_PORT}/ || exit 1
+
+# Run with gunicorn (prod), honoring BIND_HOST/BIND_PORT
+ENTRYPOINT ["/usr/local/bin/run_offline_server.sh"]
