@@ -124,7 +124,7 @@ Python Virtual Environment (venv) Script: A shell script to create a Python virt
 
 ```bash
 # 0) clone & enter
-git clone https://github.com/<your-org>/satark.git
+git clone https://github.com/venkataenumula/satark.git
 cd satark
 
 # 1) create venv and install deps
